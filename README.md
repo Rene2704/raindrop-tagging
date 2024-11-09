@@ -24,6 +24,7 @@ This project provides a script to automatically classify bookmarks saved in [Rai
    ```plaintext
    OPENAI_API_KEY=your_openai_api_key
    RAINDROP_TOKEN=your_raindrop_api_token
+   OPENAI_MODEL=your_openai_model
    ```
 
 ## Usage

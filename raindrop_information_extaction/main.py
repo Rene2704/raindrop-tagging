@@ -8,7 +8,7 @@ import openai
 import requests
 from dotenv import load_dotenv
 from markdownify import markdownify
-from raindropiopy import API, Collection, CollectionRef, Raindrop, RaindropType
+from raindropiopy import API, CollectionRef, Raindrop, RaindropType
 from slugify import slugify
 
 
@@ -52,10 +52,10 @@ def setup_logging() -> logging.Logger:
     return logger
 
 
-def initialize_keyword_extractor(api_key: str) -> keybert.KeyBERT:
+def initialize_keyword_extractor(api_key: str, model: str) -> keybert.KeyBERT:
     """Initialize and return KeyBERT model with OpenAI configuration."""
     client = openai.OpenAI(api_key=api_key)
-    llm = keybert.llm.OpenAI(client, model="gpt-4o-mini-2024-07-18", chat=True)
+    llm = keybert.llm.OpenAI(client, model=model, chat=True)
     return keybert.KeyBERT(llm=keybert.KeyLLM(llm))
 
 
@@ -133,7 +133,9 @@ def main():
     """Main execution function."""
     load_dotenv()
     logger = setup_logging()
-    key_bert_model = initialize_keyword_extractor(os.environ["OPENAI_API_KEY"])
+    key_bert_model = initialize_keyword_extractor(
+        os.environ["OPENAI_API_KEY"], os.environ["OPENAI_MODEL"]
+    )
 
     with API(os.environ["RAINDROP_TOKEN"]) as api:
         process_raindrop_items(api, key_bert_model, logger)
