@@ -6,12 +6,16 @@ authors = ["dorschre <renedorsch@yahoo.de>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.11"
-raindrop-io-py = "^0.4.1"
+python = ">=3.11,<3.14"
 python-slugify = "^8.0.4"
 keybert = "^0.8.5"
 openai = "^1.53.0"
 markdownify = "^0.13.1"
+anthropic = "^0.42.0"
+youtube-transcript-api = "^0.6.3"
+raindrop-io-py = {git = "https://github.com/ReneDorsch/raindrop-io-py.git"}
+fastapi = "^0.115.6"
+streamlit = "^1.41.1"
 
 
 [tool.poetry.group.dev.dependencies]

@@ -104,6 +104,10 @@ def get_item_text(item: Raindrop, logger: logging.Logger) -> str:
         logger.info(f"Processing article: {item.title}")
         return item.excerpt
 
+    elif item.type == RaindropType.video:
+        logger.info(f"Processing video: {item.title}")
+        return item.note
+
     logger.error(f"No text found for {item.title}")
     return ""
 
