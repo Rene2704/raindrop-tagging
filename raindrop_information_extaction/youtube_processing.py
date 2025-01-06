@@ -1,11 +1,6 @@
-"""Module for processing YouTube videos saved in Raindrop.io.
+"""Module for processing YouTube videos saved in Raindrop.io."""
 
-This module provides functionality to:
-1. Extract transcripts from YouTube videos saved in Raindrop.io
-2. Generate summaries of the video content using Anthropic's Claude API
-3. Update the Raindrop.io bookmarks with the generated summaries
-"""
-
+import logging
 import re
 from typing import Optional
 
@@ -13,6 +8,11 @@ import anthropic
 from raindropiopy import API, Raindrop, RaindropType
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api.formatters import TextFormatter
+
+from .api_utils import safe_api_call
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 # Constants for prompts
 CORE_MESSAGE_PROMPT = """
@@ -101,105 +101,112 @@ INPUT:
 
 
 def extract_youtube_short_id(link: str) -> Optional[str]:
-    """Extract the video ID from a YouTube Shorts URL.
-
-    Args:
-        link: The YouTube Shorts URL
-
-    Returns:
-        The video ID if found, None otherwise
-    """
+    """Extract the video ID from a YouTube Shorts URL."""
+    logger.info(f"Extracting video ID from YouTube Shorts URL: {link}")
     match = re.search(r"shorts/([a-zA-Z0-9_-]+)", link)
-    return match.group(1) if match else None
+    if match:
+        video_id = match.group(1)
+        logger.info(f"Successfully extracted video ID: {video_id}")
+        return video_id
+    logger.error("Failed to extract video ID from YouTube Shorts URL")
+    return None
 
 
 def extract_youtube_id(link: str) -> Optional[str]:
-    """Extract the video ID from a standard YouTube video URL.
-
-    Args:
-        link: The YouTube video URL
-
-    Returns:
-        The video ID if found, None otherwise
-    """
+    """Extract the video ID from a standard YouTube video URL."""
+    logger.info(f"Extracting video ID from standard YouTube URL: {link}")
     match = re.search(
         r"(?:youtube\.com/(?:embed/|v/|watch\?v=|watch\?.+&v=)|youtu\.be/)([a-zA-Z0-9_-]{11})",
         link,
     )
-    return match.group(1) if match else None
+    if match:
+        video_id = match.group(1)
+        logger.info(f"Successfully extracted video ID: {video_id}")
+        return video_id
+    logger.error("Failed to extract video ID from standard YouTube URL")
+    return None
 
 
 def extract_video_id(youtube_url: str) -> Optional[str]:
-    """Extract video ID from any YouTube URL (both standard videos and shorts).
-
-    Args:
-        youtube_url: The YouTube URL (either standard video or shorts)
-
-    Returns:
-        The video ID if found, None otherwise
-    """
+    """Extract video ID from any YouTube URL (both standard videos and shorts)."""
+    logger.info(f"Attempting to extract video ID from URL: {youtube_url}")
     if "shorts/" in youtube_url:
+        logger.info("Detected YouTube Shorts URL")
         return extract_youtube_short_id(youtube_url)
+    logger.info("Detected standard YouTube URL")
     return extract_youtube_id(youtube_url)
 
 
 def get_transcript(video_id: str) -> str:
-    """Get the transcript text for a YouTube video.
-
-    This function attempts to get the transcript in the following order:
-    1. Manually created English transcripts (en-US, en-GB)
-    2. Auto-generated English transcript (en)
-
-    Args:
-        video_id: The YouTube video ID
-
-    Returns:
-        The transcript text as a single string with spaces between segments
-
-    Raises:
-        NoTranscriptFound: If no suitable transcript is available
-    """
+    """Get the transcript text for a YouTube video."""
+    logger.info(f"Fetching transcript for video ID: {video_id}")
     formatter = TextFormatter()
 
     # Try to get manually created English transcripts first
     manual_langs = ["en-US", "en-GB"]
     for lang in manual_langs:
         try:
-            transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=[lang])
-            return formatter.format_transcript(transcript).replace("\n", " ")
+            logger.info(f"Attempting to fetch manual transcript in {lang}")
+            transcript = safe_api_call(
+                YouTubeTranscriptApi.get_transcript,
+                video_id,
+                languages=[lang],
+                max_retries=3,
+                logger=logger,
+            )
+            if transcript:
+                logger.info(f"Successfully found manual transcript in {lang}")
+                return formatter.format_transcript(transcript).replace("\n", " ")
+            logger.info(f"No manual transcript found in {lang}")
         except Exception:
+            logger.info(f"No manual transcript found in {lang}")
             continue
 
     # If no manual transcript, try auto-generated
     try:
-        transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=["en"])
-        return formatter.format_transcript(transcript).replace("\n", " ")
+        logger.info("Attempting to fetch auto-generated English transcript")
+        transcript = safe_api_call(
+            YouTubeTranscriptApi.get_transcript,
+            video_id,
+            languages=["en"],
+            max_retries=3,
+            logger=logger,
+        )
+        if transcript:
+            logger.info("Successfully found auto-generated transcript")
+            return formatter.format_transcript(transcript).replace("\n", " ")
     except Exception as e:
         # Get available transcript languages for better error message
         try:
-            transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-            available_langs = [
-                f"{t.language_code} ({t.language})"
-                for t in transcript_list._manually_created_transcripts.values()
-            ]
-            auto_langs = [
-                f"{t.language_code} ({t.language})"
-                for t in transcript_list._generated_transcripts.values()
-            ]
+            logger.info("Fetching list of available transcripts")
+            transcript_list = safe_api_call(
+                YouTubeTranscriptApi.list_transcripts,
+                video_id,
+                max_retries=3,
+                logger=logger,
+            )
+            if transcript_list:
+                available_langs = [
+                    f"{t.language_code} ({t.language})"
+                    for t in transcript_list._manually_created_transcripts.values()
+                ]
+                auto_langs = [
+                    f"{t.language_code} ({t.language})"
+                    for t in transcript_list._generated_transcripts.values()
+                ]
 
-            error_msg = f"No English transcript found for video {video_id}.\n"
-            if available_langs:
-                error_msg += (
-                    f"Available manual transcripts: {', '.join(available_langs)}\n"
-                )
-            if auto_langs:
-                error_msg += (
-                    f"Available auto-generated transcripts: {', '.join(auto_langs)}"
-                )
+                error_msg = f"No English transcript found for video {video_id}.\n"
+                if available_langs:
+                    error_msg += f"Available manual transcripts: {', '.join(available_langs)}\n"
+                if auto_langs:
+                    error_msg += f"Available auto-generated transcripts: {', '.join(auto_langs)}"
 
-            raise ValueError(error_msg) from e
+                logger.error(error_msg)
+                raise ValueError(error_msg) from e
         except Exception:
-            raise ValueError(f"No transcript available for video {video_id}")
+            error_msg = f"No transcript available for video {video_id}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
 
 
 def generate_paper_summary(
@@ -207,55 +214,75 @@ def generate_paper_summary(
     anthropic_client: anthropic.Anthropic,
     model: str = "claude-3-haiku-20240307",
 ) -> str:
-    """Generate a comprehensive summary of the text using Anthropic's Claude API.
-
-    Args:
-        text: The text to summarize
-        anthropic_client: Initialized Anthropic client
-        model: The Claude model to use
-
-    Returns:
-        A markdown-formatted summary combining core message, summary, and key ideas
-    """
+    """Generate a comprehensive summary of the text using Anthropic's Claude API."""
     if not isinstance(text, str) or len(text) < 10:
+        logger.error("Invalid input text for summary generation")
         return ""
 
-    # Generate ideas
-    ideas_message = anthropic_client.messages.create(
-        model=model,
-        max_tokens=1024,
-        temperature=0,
-        system=IDEAS_PROMPT,
-        messages=[{"role": "user", "content": [{"type": "text", "text": text}]}],
-    )
-    ideas_text = ideas_message.content[0].text if ideas_message.content else ""
+    logger.info("Generating ideas using Claude")
+    try:
+        ideas_message = safe_api_call(
+            anthropic_client.messages.create,
+            model=model,
+            max_tokens=1024,
+            temperature=0,
+            system=IDEAS_PROMPT,
+            messages=[{"role": "user", "content": [{"type": "text", "text": text}]}],
+            max_retries=3,
+            logger=logger,
+        )
+        ideas_text = (
+            ideas_message.content[0].text if ideas_message and ideas_message.content else ""
+        )
+        logger.info("Successfully generated ideas")
+    except Exception as e:
+        logger.error(f"Error generating ideas: {e}")
+        ideas_text = ""
 
-    # Generate summary
-    summary_message = anthropic_client.messages.create(
-        model=model,
-        max_tokens=1024,
-        temperature=0,
-        system=SUMMARY_PROMPT,
-        messages=[{"role": "user", "content": [{"type": "text", "text": text}]}],
-    )
-    summary_text = summary_message.content[0].text if summary_message.content else ""
+    logger.info("Generating summary using Claude")
+    try:
+        summary_message = safe_api_call(
+            anthropic_client.messages.create,
+            model=model,
+            max_tokens=1024,
+            temperature=0,
+            system=SUMMARY_PROMPT,
+            messages=[{"role": "user", "content": [{"type": "text", "text": text}]}],
+            max_retries=3,
+            logger=logger,
+        )
+        summary_text = (
+            summary_message.content[0].text if summary_message and summary_message.content else ""
+        )
+        logger.info("Successfully generated summary")
+    except Exception as e:
+        logger.error(f"Error generating summary: {e}")
+        summary_text = ""
 
-    # Generate core message
-    core_message = anthropic_client.messages.create(
-        model=model,
-        max_tokens=1024,
-        temperature=0,
-        system=CORE_MESSAGE_PROMPT,
-        messages=[
-            {
-                "role": "user",
-                "content": [{"type": "text", "text": summary_text + ideas_text}],
-            }
-        ],
-    )
-    core_text = core_message.content[0].text if core_message.content else ""
+    logger.info("Generating core message using Claude")
+    try:
+        core_message = safe_api_call(
+            anthropic_client.messages.create,
+            model=model,
+            max_tokens=1024,
+            temperature=0,
+            system=CORE_MESSAGE_PROMPT,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [{"type": "text", "text": summary_text + ideas_text}],
+                }
+            ],
+            max_retries=3,
+            logger=logger,
+        )
+        core_text = core_message.content[0].text if core_message and core_message.content else ""
+        logger.info("Successfully generated core message")
+    except Exception as e:
+        logger.error(f"Error generating core message: {e}")
+        core_text = ""
 
-    return f"""
+    final_summary = f"""
 # Core Message
 
 {core_text}
@@ -268,6 +295,8 @@ def generate_paper_summary(
 
 {ideas_text}
     """
+    logger.info("Successfully compiled complete summary")
+    return final_summary
 
 
 def process_youtube_videos(
@@ -275,76 +304,92 @@ def process_youtube_videos(
     anthropic_client: anthropic.Anthropic,
     model: str = "claude-3-haiku-20240307",
 ) -> None:
-    """Process YouTube videos saved in Raindrop.io.
+    """Process YouTube videos saved in Raindrop.io."""
+    logger.info("Starting YouTube video processing")
+    try:
 
-    This function:
-    1. Searches for YouTube videos in Raindrop.io
-    2. Extracts their transcripts
-    3. Generates summaries using Claude
-    4. Updates the Raindrop.io bookmarks with the summaries
+        def search_videos():
+            return [
+                video
+                for video in Raindrop.search(api, search="youtube.com")
+                if video.type == RaindropType.video
+            ]
 
-    Args:
-        api: Initialized Raindrop.io API client
-        anthropic_client: Initialized Anthropic client
-        model: The Claude model to use for summarization
-    """
-    youtube_videos = [
-        video
-        for video in Raindrop.search(api, search="youtube.com")
-        if video.type == RaindropType.video
-    ]
+        youtube_videos = safe_api_call(search_videos, max_retries=5, logger=logger)
+        if not youtube_videos:
+            logger.error("Failed to fetch YouTube videos")
+            return
 
-    for video in youtube_videos:
-        if "_video_summarized" in video.tags:
-            continue
+        logger.info(f"Found {len(youtube_videos)} YouTube videos")
 
-        try:
-            video_id = extract_video_id(video.link)
-            if not video_id:
-                print(f"Could not extract video ID from {video.link}")
+        for video in youtube_videos:
+            if "_video_summarized" in video.tags:
+                logger.info(f"Skipping already processed video: {video.title}")
                 continue
 
             try:
-                transcript_text = get_transcript(video_id)
-            except ValueError as e:
-                print(f"Skipping video {video.title}: {str(e)}")
-                continue
+                logger.info(f"Processing video: {video.title}")
+                video_id = extract_video_id(video.link)
+                if not video_id:
+                    logger.error(f"Could not extract video ID from {video.link}")
+                    continue
 
-            description = generate_paper_summary(
-                transcript_text, anthropic_client, model
-            )
-            print(description)
-            Raindrop.update(
-                api,
-                id=video.id,
-                note=description,
-                tags=video.tags + ["_video_summarized"],
-            )
-            print(f"Successfully processed video: {video.title}")
+                try:
+                    logger.info("Fetching video transcript")
+                    transcript_text = get_transcript(video_id)
+                except ValueError as e:
+                    logger.error(f"Skipping video {video.title}: {str(e)}")
+                    continue
 
-        except Exception as e:
-            print(f"Error processing video {video.id}: {e}")
+                logger.info("Generating video summary")
+                description = generate_paper_summary(transcript_text, anthropic_client, model)
+
+                logger.info("Updating video in Raindrop")
+
+                def update_video():
+                    return Raindrop.update(
+                        api,
+                        id=video.id,
+                        note=description,
+                        tags=video.tags + ["_video_summarized"],
+                    )
+
+                if safe_api_call(update_video, max_retries=5, logger=logger):
+                    logger.info(f"Successfully processed video: {video.title}")
+                else:
+                    logger.error(f"Failed to update video: {video.title}")
+
+            except Exception as e:
+                logger.error(f"Error processing video {video.id}: {e}")
+
+        logger.info("YouTube video processing completed")
+
+    except Exception as e:
+        logger.error(f"Error in YouTube video processing: {e}")
 
 
 def main():
-    """Main entry point for the script.
+    """Main entry point for the script."""
+    logger.info("Starting YouTube video processing script")
+    try:
+        # Load environment variables
+        from dotenv import load_dotenv
 
-    Requires the following environment variables:
-    - RAINDROP_TOKEN: Your Raindrop.io API token
-    - ANTHROPIC_API_KEY: Your Anthropic API key
-    """
-    import os
+        load_dotenv()
+        logger.info("Environment variables loaded")
 
-    from dotenv import load_dotenv
+        # Initialize clients
+        logger.info("Initializing Anthropic client")
+        anthropic_client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
-    # Load environment variables
-    load_dotenv()
+        logger.info("Processing videos")
+        with API(os.environ["RAINDROP_TOKEN"]) as api:
+            process_youtube_videos(api, anthropic_client)
 
-    # Initialize clients
-    anthropic_client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        logger.info("Script completed successfully")
 
-    with API(os.getenv("RAINDROP_TOKEN")) as api:
-        process_youtube_videos(api, anthropic_client)
+    except Exception as e:
+        logger.error(f"Script failed: {e}")
 
 
 if __name__ == "__main__":
