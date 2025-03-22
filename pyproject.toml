@@ -1,36 +1,35 @@
 [tool.poetry]
-name = "raindrop-labels"
+name = "raindrop-information-extaction"
 version = "0.1.0"
-description = "Automated system for processing raindrop.io bookmarks"
-authors = ["dorschre"]
+description = "Process Raindrop.io bookmarks with automatic tag extraction and summarization"
+authors = ["Your Name <your.email@example.com>"]
+readme = "README.md"
+packages = [{include = "raindrop_information_extaction"}]
 
 [tool.poetry.dependencies]
-python = ">=3.11,<3.14"
-python-slugify = "^8.0.4"
-keybert = "^0.8.5"
-openai = "^1.53.0"
-markdownify = "^0.13.1"
-anthropic = "^0.42.0"
-youtube-transcript-api = "^0.6.3"
-raindrop-io-py = {git = "https://github.com/ReneDorsch/raindrop-io-py.git"}
-fastapi = "^0.115.6"
-streamlit = "^1.41.1"
-requests = "^2.32.3"
-python-multipart = "^0.0.20"
-uvicorn = "^0.34.0"
-python-dotenv = "^1.0.1"
-
+python = "^3.11"
+streamlit = "^1.32.0"
+raindropiopy = "^0.1.1"
+keybert = "^0.7.0"
+anthropic = "^0.18.1"
+python-dotenv = "^1.0.0"
+typer = {extras = ["all"], version = "^0.9.0"}
+rich = "^13.7.0"
+sentence-transformers = "^2.2.2"
 
 [tool.poetry.group.dev.dependencies]
-pytest = "^8.3.3"
-black = "^23.11.0"
-isort = "^5.12.0"
-mypy = "^1.7.1"
-ruff = "^0.1.6"
+pytest = "^8.0.0"
+black = "^24.1.1"
+isort = "^5.13.2"
+ruff = "^0.2.1"
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+raindrop-process = "raindrop_information_extaction.cli:app"
+raindrop-web = "raindrop_information_extaction.frontend:main"
 
 [tool.black]
 line-length = 100
@@ -39,6 +38,7 @@ target-version = ['py311']
 [tool.isort]
 profile = "black"
 line_length = 100
+multi_line_output = 3
 
 [tool.ruff]
 line-length = 100

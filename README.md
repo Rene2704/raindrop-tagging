@@ -7,10 +7,10 @@ A web application for automatically processing Raindrop.io bookmarks with tag ex
 - Automatic tag extraction using KeyBERT
 - Summary generation using Anthropic's Claude API
 - Modern web interface built with Streamlit
-- RESTful API built with FastAPI
+- Command-line interface for batch processing
 - Support for various bookmark types (links, articles, videos)
-- Batch processing capabilities
-- Real-time processing status and results
+- Real-time processing status and progress tracking
+- Option to update bookmarks directly in Raindrop.io
 
 ## Requirements
 
@@ -43,36 +43,53 @@ A web application for automatically processing Raindrop.io bookmarks with tag ex
 
 ## Usage
 
-1. Start the application:
+### Starting the Application
+
+1. Start the backend server:
    ```bash
-   poetry run python -m raindrop_information_extaction.main
+   poetry run uvicorn raindrop_information_extaction.api:app --reload
    ```
+   The API will be available at http://localhost:8000
 
-   This will start both the FastAPI backend server and the Streamlit frontend.
+2. Start the frontend (in a new terminal):
+   ```bash
+   poetry run raindrop-web
+   ```
+   Or alternatively:
+   ```bash
+   poetry run streamlit run raindrop_information_extaction/frontend.py
+   ```
+   The web interface will be available at http://localhost:8501
 
-2. Open your browser:
-   - Frontend: http://localhost:8501
-   - API docs: http://localhost:8000/docs
+### Web Interface
 
-3. Use the web interface to:
-   - Select bookmarks to process
-   - Configure processing options
-   - View processing results
-   - Monitor processing status
+Use the web interface to:
+- Select individual bookmarks to process
+- Configure processing options:
+  - Tag extraction
+  - Summary generation
+  - Raindrop.io updates
+- View real-time processing results
+- See processing statistics
+- Monitor processing logs
 
-## API Endpoints
+### Command Line Interface
 
-- `POST /process-bookmarks/`: Process a list of bookmarks
-  ```json
-  {
-    "bookmark_ids": ["id1", "id2"],
-    "update_raindrop": true,
-    "extract_tags": true,
-    "generate_summary": true
-  }
-  ```
+Run the CLI tool:
+```bash
+poetry run raindrop-process --help
+```
 
-- `GET /processing-history/`: Get processing history
+CLI Options:
+- `--tags/--no-tags`: Enable/disable tag extraction
+- `--summary/--no-summary`: Enable/disable summary generation
+- `--update/--no-update`: Enable/disable Raindrop.io updates
+
+### API Documentation
+
+Once the backend is running, view the API documentation at:
+- Swagger UI: http://localhost:8000/docs
+- ReDoc: http://localhost:8000/redoc
 
 ## Development
 

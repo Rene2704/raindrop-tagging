@@ -4,12 +4,13 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import anthropic
 import keybert
 import keybert.llm
 import openai
+from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel
 from raindropiopy import API, CollectionRef, Raindrop, RaindropType
@@ -40,12 +41,25 @@ key_bert_model: keybert.KeyBERT | None = None
 # In-memory store for batch processing tasks
 processing_tasks: Dict[str, BatchProcessingStatus] = {}
 
+# Add after other imports
+load_dotenv()  # Load environment variables from .env file
+
 
 class BookmarkList(BaseModel):
     """Response model for bookmark list."""
 
     bookmarks: List[Bookmark]
     total_count: int
+    error: Optional[str] = None
+
+
+def check_required_env_vars() -> Optional[str]:
+    """Check if all required environment variables are set."""
+    required_vars = ["RAINDROP_TOKEN", "OPENAI_API_KEY", "OPENAI_MODEL", "ANTHROPIC_API_KEY"]
+    missing_vars = [var for var in required_vars if not os.getenv(var)]
+    if missing_vars:
+        return f"Missing required environment variables: {', '.join(missing_vars)}"
+    return None
 
 
 @asynccontextmanager
@@ -53,6 +67,10 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for FastAPI application."""
     global processor, anthropic_client, key_bert_model
     try:
+        logger.info("Checking environment variables...")
+        if error := check_required_env_vars():
+            raise ValueError(error)
+
         logger.info("Initializing services...")
 
         # Initialize OpenAI client for KeyBERT
@@ -80,7 +98,7 @@ async def lifespan(app: FastAPI):
 
     except Exception as e:
         logger.error(f"Error during startup: {e}")
-        raise HTTPException(status_code=500, detail="Failed to initialize services")
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
         logger.info("Cleaning up services")
         processor = None
@@ -106,7 +124,7 @@ async def get_bookmarks(
     """Get bookmarks from Raindrop.io."""
     if not processor:
         logger.error("Services not initialized")
-        raise HTTPException(status_code=500, detail="Services not initialized")
+        return BookmarkList(bookmarks=[], total_count=0, error="Services not initialized")
 
     try:
         logger.info(f"Fetching bookmarks from {collection} collection")
@@ -141,28 +159,30 @@ async def get_bookmarks(
             logger.info("Converting to Bookmark models")
             bookmark_models = [
                 Bookmark(
-                    id=bookmark.id,
+                    id=str(bookmark.id),  # Ensure ID is string
                     link=bookmark.link,
                     title=bookmark.title,
                     excerpt=bookmark.excerpt,
                     note=bookmark.note,
                     tags=bookmark.tags,
                     summary=None,
-                    created_at=datetime.now(),  # Use actual creation time if available
-                    updated_at=None,
+                    created_at=bookmark.created,  # Use actual creation time
+                    updated_at=bookmark.last_update,  # Use actual update time
+                    is_processed="_processed" in bookmark.tags,  # Add processing status
+                    type=bookmark.type,  # Add bookmark type
                 )
                 for bookmark in bookmarks
             ]
 
             logger.info(f"Successfully prepared {len(bookmark_models)} bookmarks")
             return BookmarkList(
-                bookmarks=bookmark_models,
-                total_count=len(bookmark_models),
+                bookmarks=bookmark_models, total_count=len(bookmark_models), error=None
             )
 
     except Exception as e:
-        logger.error(f"Error fetching bookmarks: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch bookmarks: {str(e)}")
+        error_msg = f"Failed to fetch bookmarks: {str(e)}"
+        logger.error(error_msg)
+        return BookmarkList(bookmarks=[], total_count=0, error=error_msg)
 
 
 @app.post("/process-bookmarks/", response_model=BookmarkProcessingResponse)
