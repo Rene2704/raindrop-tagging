@@ -116,12 +116,31 @@ Once the backend is running, view the API documentation at:
 
 ## Docker Support
 
-Build and run with Docker:
+1. Build the Docker image:
+   ```bash
+   docker build -t raindrop-processor .
+   ```
 
-```bash
-docker build -t raindrop-processor .
-docker run -p 8000:8000 -p 8501:8501 --env-file .env raindrop-processor
-```
+2. Run the container:
+   ```bash
+   docker run -p 8000:8000 -p 8501:8501 --env-file .env raindrop-processor
+   ```
+
+   This will start both:
+   - API server at http://localhost:8000
+   - Web interface at http://localhost:8501
+
+3. View logs:
+   ```bash
+   docker logs -f raindrop-processor
+   ```
+
+4. Stop the container:
+   ```bash
+   docker stop raindrop-processor
+   ```
+
+Note: Make sure your `.env` file is present in the same directory when running the container.
 
 ## Contributing
 
